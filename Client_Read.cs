@@ -5,6 +5,7 @@ using System.Net;
 using UnityEngine;
 using Networking;
 using shared_handler;
+using Defective.JSON;
 
 namespace ClientLib
 {
@@ -42,8 +43,12 @@ namespace ClientLib
         IPAddress rc_IP;
 
         //CLIENT INFO VARIABLES
-        UDP_Networking _connection;
         UDP_Client main;
+
+        //CONNECTION VARIABLES
+        UDP_Networking _connection;
+
+        //UTILITIES
         Handler _handler;
 
         //MESSAGE INFO
@@ -97,7 +102,7 @@ namespace ClientLib
 
                 if (send_Confirm)
                 {
-                    SendACK();
+                    main.SendACK(rc_TimeID);
                 }
 
                 //CHECK TIME ID
@@ -122,6 +127,12 @@ namespace ClientLib
                     case 1: //Confirmation received
                         ConfirmationReceived();
                         break;
+                    case 3: //UPDATE FROM CLIENTS
+                        ClientUpdateReceived();
+                        break;
+                    case 4: //Receives info of self.
+                        PlayerFromServer();
+                        break;
                 }
 
             }
@@ -130,54 +141,6 @@ namespace ClientLib
                 Debug.Log("Couldn't parse message:" + e);
             }
         }
-
-
-        /*==============================================
-        
-                MESSAGE SENDER
-
-        ===============================================*/
-
-        public void Reply(string header, bool ACK = false, params string[] parts)
-        {
-            main.TimeID++;
-
-            // LAYERID; TIMEID; HEADER-- > Identifiers
-            string Identifier = _handler.CompileList(main.separator_identifier, main.cl_Tag, main.TimeID.ToString(), header);
-
-            // MSG1|MSG2|MSG3|MSG4...  --> Message 
-            string Message = _handler.CompileList(main.separator_message, parts);
-
-            //Identifier = _handler.CompileList(separator_identifier, main.cl_Tag, main.TimeID.ToString(), header);
-            
-            //Joins parts together.
-            string ToSend = Identifier + main.separator_parts + Message;
-
-            if(ACK)
-            {
-                string Confirmations = _handler.CompileList(main.separator_identifier, "1");
-                ToSend = ToSend + main.separator_parts + Confirmations;
-
-                ConfirmationRequest newRequest = new ConfirmationRequest();
-                newRequest.SetupRequest(ToSend, main.TimeID);
-                main.AwaitingResponses.Add(newRequest);
-            }
-
-            Debug.Log(ToSend);
-            _connection.Send(ToSend, rc_IP, rc_Port);
-        }
-
-        public void SendACK()
-        {
-            string Message = _handler.CompileList(main.separator_message, "ACK");
-            string Identifier = _handler.CompileList(main.separator_identifier, main.cl_Tag, rc_TimeID.ToString(), "1");
-
-            string ToSend = Identifier + main.separator_parts + Message;
-
-            Debug.Log(ToSend);
-            _connection.Send(ToSend, rc_IP, rc_Port);
-        }
-
 
         /*=======================
          CASES CASES CASES CASES
@@ -189,24 +152,37 @@ namespace ClientLib
 
         private void ClientInfoReceived()
         {
-            Client_JsonFormat receivedJSON = JsonUtility.FromJson<Client_JsonFormat>(Message[0]); //Received JSON is turned into a normal instance.
+            var jsonObject = new JSONObject(Message[0]);
 
-            foreach(Client_Instance Instance in main.server_Clients)
+            string rcvTag = jsonObject[0].stringValue;
+            
+
+            foreach (Client_Instance Instance in main.server_Clients)
             {
-                if(Instance.Tag == receivedJSON.Tag) //No doubles please :>
+                if (Instance.Tag == rcvTag) //No doubles please :>
                 {
                     return;
                 }
-                Client_Instance newInstance = new Client_Instance();
-                newInstance.Setup_Client(receivedJSON.Tag);
-                main.server_Clients.Add(newInstance);
             }
+
+            if(rcvTag == main.Tag)
+            {
+                return;
+            }
+
+            Client_Instance newInstance = new Client_Instance();
+            GameObject newObject = Transform.Instantiate(main.Instance_Prefab, Vector3.zero, Quaternion.identity);
+            newObject.name = rcvTag + "_" + "Instance";
+            newInstance.Setup_Client(rcvTag, newObject);
+            Debug.Log("Received new player info: " + rcvTag + " connected.");
+
+            main.server_Clients.Add(newInstance);
         }
 
         /*-------------------------
           CONFIRMATION RECEIVED
         -------------------------*/
-        
+
         private void ConfirmationReceived()
         {
             List<ConfirmationRequest> ToRemove = new List<ConfirmationRequest>();
@@ -224,16 +200,47 @@ namespace ClientLib
                 ToRemove.Remove(ToRemove[0]);
             }
         }
-    }
 
-    public class Client_Instance
-    {
-        public string Tag;
-        
-        public void Setup_Client(string tag)
+        /*-------------------------
+          CLIENT UPDATE RECEIVED
+        -------------------------*/
+
+        private void ClientUpdateReceived()
         {
-            Tag = tag;
+            //Client_UpdatePack receivedJSON = JsonUtility.FromJson<Client_UpdatePack>(Message[0]);
+
+            //Debug.Log("Update pack");
+            var UpdatePack = new JSONObject(Message[0]);
+
+            if (UpdatePack[0].stringValue == main.Tag)
+            {
+                Debug.Log("Actually this happens");
+                //main.move.ReceivedPos(_handler.ExtractVector(UpdatePack[1].stringValue));
+            }
+            else
+            {
+                foreach (Client_Instance client in main.server_Clients)
+                {
+                    Debug.Log(UpdatePack[0].stringValue + "_" + client.Tag);
+                    Debug.Log(main.server_Clients.Count);
+                    if (UpdatePack[0].stringValue == client.Tag)
+                    {
+                        
+                        client.SetPos(_handler.ExtractVector(UpdatePack[1].stringValue) , _handler.ExtractVector(UpdatePack[2].stringValue));
+
+                        client.Instance.transform.position = client.Pos;
+                    }
+                }
+            }
+        }
+
+        /*-------------------------
+          PLAYER FROM SERVER!
+        -------------------------*/
+
+        private void PlayerFromServer() //Basically we receive a JSON with info the server should have saved from previous sessions.
+        {
+            var JsonPlayer = new JSONObject(Message[0]);
         }
     }
 }
-

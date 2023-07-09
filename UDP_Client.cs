@@ -4,50 +4,59 @@ using UnityEngine;
 using Networking;
 using System.Net;
 using System;
+using System.Text;
 using shared_handler;
 using ClientLib;
 
 public class UDP_Client : MonoBehaviour
 {
-    [SerializeField] private int sv_Port;
-    [SerializeField] private string serverIP;
-    private IPAddress sv_IP;
-
-
     /*========================
-        CLIENT VARIABLES
+          SERVER INFO!
     ========================*/
-    private UDP_Networking _connection;
-    [SerializeField] private int client_Port;
-    public string cl_Tag;
-    public int TimeID;
 
-    //SEPARATOR CHARACTERS
-    public char separator_parts = '#';
-    public char separator_identifier = ';';
-    public char separator_message = ';';
+    [SerializeField] private int sv_Port; //Port of the server
+    [SerializeField] private string serverIP; //IP of the server
+    private IPAddress sv_IP; //Converted the IP to an IPAddress object.
 
-    //AwaitingRequests Part
-    public List<ConfirmationRequest> AwaitingResponses;
-
-    //Handler
-    private Handler _handler;
+    /*==================================
+        CLIENT-SIDE CONNECTION INFO!
+    ==================================*/
+    [SerializeField] private int client_Port; //Port the client will be using.
 
     /*========================
        SERVER VARIABLES
    ========================*/
-
-    public List<int> LastIDs;
-
-    //TIMER VARIABLES
-    private int TickDown = 50;
+    public List<int> LastIDs; 
 
     /*========================
-       OTHER CLIENT VARIABLES
-   ========================*/
-    public List<Client_Instance> server_Clients;
+        CLIENT VARIABLES
+    ========================*/
+    public string Tag; //Tag or Username 
 
-    /*=======================?
+    /*==================================
+       CONNECTION VALUES (NO TOUCH)
+    ==================================*/
+    private UDP_Networking _connection; //Connection
+    public int TimeID; //MESSAGE ORDER ID
+    public char separator_parts = '#', separator_identifier = ';', separator_message = ';'; //Characters for message structures.
+    public List<ConfirmationRequest> AwaitingResponses; //List of AwaitingResponses.
+    private int TickDown = 60; //TIMER VARIABLE
+
+    /*========================
+       UTILITIES (HANDLER)
+    ========================*/
+    private Handler _handler; //Handler for some common operations.
+
+    /*========================
+       OTHER USERS INFO
+   ========================*/
+    public List<Client_Instance> server_Clients; //List with the other clients stored.
+    public GameObject Instance_Prefab; //Prefab for the object a client would use.
+
+    
+    
+    
+    /*========================
         SETUP SETUP SETUP
     ========================*/
     private void Awake()
@@ -56,6 +65,7 @@ public class UDP_Client : MonoBehaviour
         QualitySettings.vSyncCount = 0;
         Application.targetFrameRate = 60;
 
+        //Prepare the handler, the server IP to IPAddress format and the list of other clients connected to the server.
         _handler = new Handler();
         sv_IP = IPAddress.Parse(serverIP);
         server_Clients = new List<Client_Instance>();
@@ -66,14 +76,13 @@ public class UDP_Client : MonoBehaviour
         {
             LastIDs.Add(-1);
         }
-
         //Setup Awaiting Responses
         AwaitingResponses = new List<ConfirmationRequest>();
     }
 
     private void Start()
     {
-        connection_create();
+        connection_create(); //Create connection;
     }
 
     private void connection_create()
@@ -85,7 +94,7 @@ public class UDP_Client : MonoBehaviour
     }
 
     /*=======================
-     READING READING READING
+        READING LOOP!
     =======================*/
 
     private void FixedUpdate()
@@ -123,7 +132,7 @@ public class UDP_Client : MonoBehaviour
         TimeID++;
 
         // LAYERID; TIMEID; HEADER-- > Identifiers
-        string Identifier = _handler.CompileList(separator_identifier, cl_Tag, TimeID.ToString(), header);
+        string Identifier = _handler.CompileList(separator_identifier, Tag, TimeID.ToString(), header);
 
         // MSG1|MSG2|MSG3|MSG4...  --> Message 
         string Message = _handler.CompileList(separator_message, parts);
@@ -144,14 +153,25 @@ public class UDP_Client : MonoBehaviour
             AwaitingResponses.Add(newRequest);
         }
 
-        print(ToSend);
+        //print(ToSend);
         _connection.Send(ToSend, sv_IP, sv_Port);
     }
 
     public void ResendMessage(string ToSend)
     {
-        print(ToSend + " RESENT");
+        //print(ToSend + " RESENT");
         _connection.Send(ToSend, sv_IP, sv_Port);
+    }
+
+    public void SendACK(int rc_TimeID)
+    {
+        string Message = _handler.CompileList(separator_message, "ACK");
+        string Identifier = _handler.CompileList(separator_identifier, Tag, rc_TimeID.ToString(), "1");
+
+        string ToSend = Identifier + separator_parts + Message;
+
+        //Debug.Log(ToSend);
+        ResendMessage(ToSend);
     }
 
     /*==============================
@@ -161,21 +181,21 @@ public class UDP_Client : MonoBehaviour
     private void TickAwaiting()
     {
         TickDown--;
-        if(TickDown <= 0)
+        if (TickDown <= 0)
         {
             TickDown = 50;
 
-            if(AwaitingResponses.Count == 0)
+            if (AwaitingResponses.Count == 0)
             {
                 return;
             }
 
             List<ConfirmationRequest> ToRemove = new List<ConfirmationRequest>();
-            foreach(ConfirmationRequest Request in AwaitingResponses)
+            foreach (ConfirmationRequest Request in AwaitingResponses)
             {
                 Request.AmountsTicked++;
 
-                if(Request.AmountsTicked > 10)
+                if (Request.AmountsTicked > 10)
                 {
                     ToRemove.Add(Request);
                 }
@@ -185,7 +205,7 @@ public class UDP_Client : MonoBehaviour
                 }
             }
 
-            while(ToRemove.Count > 0)
+            while (ToRemove.Count > 0)
             {
                 AwaitingResponses.Remove(ToRemove[0]);
                 ToRemove.Remove(ToRemove[0]);

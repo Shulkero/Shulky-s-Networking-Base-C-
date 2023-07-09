@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using UnityEngine;
 using System;
 using System.Net;
 using System.Net.Sockets;
@@ -93,7 +92,7 @@ namespace Networking
             }
             catch (Exception e)
             {
-                Debug.Log("Failed to listen for UDP at port " + port_listen + ": " + e.Message);
+                Console.Write("Failed to listen for UDP at port " + port_listen + ": " + e.Message);
                 return;
             }
 

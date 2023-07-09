@@ -1,21 +1,15 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using UnityEngine;
-using ServerLib;
+//using UnityEngine;
+using System.Globalization;
 using System.Net;
+using UnityEngine;
 
 namespace shared_handler
 {
     public class Handler
     {
-
-        UDP_Server main;
-
-        public void SetupHandler(UDP_Server Server)
-        {
-            main = Server;
-        }
 
         /*===============================
                     HANDLERS
@@ -30,61 +24,15 @@ namespace shared_handler
 
         ===============================*/
 
-        /*private server_CInstance handler_FindCInstance(string msg_addr, int msg_port, string username = null)
+        public string StringVector(float[,] toString)
         {
-            try
-            {
-                for (int i = 0; i < server_CInstances.Count; i++)
-                {
-                    if (server_CInstances[i].CInstance_Addr == msg_addr && server_CInstances[i].CInstance_Port == msg_port)
-                    {
-                        if (username != null)
-                        {
-                            if (server_CInstances[i].CInstance_Username == username)
-                            {
-                                return server_CInstances[i];
-                            }
-                        }
-                        else
-                        {
-                            return server_CInstances[i];
-                        }
-                    }
-                }
-                return null;
-            }
-            catch (Exception e)
-            {
-                Debug.Log("Error in handler_FindCInstance" + e);
-                return null;
-            }
-        }*/
-
-
-        public Server_Client ClientByTag(string search_Tag)
-        {
-            foreach(Server_Client cl in main.server_Clients) //Loop trough all connected clients
-            {
-                if (cl.Tag == search_Tag) //Tag match
-                {
-                    
-                    return cl;
-                }
-            }
-            return null;
+            return ("(" + toString[0, 0].ToString() + "o" + toString[0, 1].ToString() + ")").Replace(",", ".");
         }
 
-        public Server_Client ClientByAddr(int search_Port, IPAddress search_IP)
+        public string StringVector(Vector2 toString)
         {
-            foreach (Server_Client cl in main.server_Clients) //Loop trough all connected clients
-            {
-                if (cl.IP == search_IP && cl.Port == search_Port) //Address matches.
-                {
-                    Debug.Log(cl.IP + "-" + search_IP + " " + cl.Port + "-" + search_Port);
-                    return cl;
-                }
-            }
-            return null;
+            float[,] converted = new float[1, 2] { { toString.x, toString.y } };
+            return ("(" + converted[0, 0].ToString() + "o" + converted[0, 1].ToString() + ")").Replace(",", ".");
         }
 
         public string CompileList(char separator, params string[] strings)
@@ -107,20 +55,43 @@ namespace shared_handler
             }
             catch (Exception e)
             {
-                Debug.Log("Error at handler_CompileList " + e);
+                Console.Write("Error at handler_CompileList " + e);
                 return null;
             }
         }
 
-        public string CompileClient(Server_Client client)
+        public List<T> ListFromArray<T>(T[] array)
         {
-            Client_JsonFormat newJson = new Client_JsonFormat();
-            newJson.Tag = client.Tag;
-            string CompiledClient = JsonUtility.ToJson(newJson);
-            return CompiledClient;
+            List<T> ToReturn = new List<T>();
+            for(int i = 0; i < array.Length; i++)
+            {
+                ToReturn.Add(array[i]);
+            }
+            return ToReturn;
         }
 
+        public string StringFromArray<T>(T[] list, Type type)
+        {
+            string result = "";
 
+            for(int i = 0; i < list.Length; i++)
+            {
+                result = result + "," + list[i];
+            }
+
+            return result;
+        }
+
+        public float[,] ExtractVector(string input)
+        {
+            string result = input.Replace("(", "");
+            result = result.Replace(")", "");
+            result = result.Replace("\"", "");
+            string[] two = result.Split("o");
+            float[,] Final = new float[1, 2] { { float.Parse(two[0], CultureInfo.InvariantCulture.NumberFormat), float.Parse(two[1], CultureInfo.InvariantCulture.NumberFormat) } };
+
+            return Final;
+        }
     }
 
     public class ConfirmationRequest
@@ -136,8 +107,39 @@ namespace shared_handler
         }
     }
 
-    public class Client_JsonFormat
+    /*public class Client_JsonFormat
     {
         public string Tag;
+    }
+
+    public class Player_JsonFormat
+    {
+        public string Tag;
+    }
+
+    public class Client_UpdatePack
+    {
+        public string Tag;
+       * public string Pos;
+    }*/
+
+    public class Client_Instance
+    {
+        public string Tag;
+        public Vector2 Pos;
+
+        public GameObject Instance;
+
+        public void Setup_Client(string tag, GameObject Prefab)
+        {
+            Tag = tag;
+            Pos = Vector2.zero;
+            Instance = Prefab;
+        }
+
+        public void SetPos(float[,] Position, float[,] Direction)
+        {
+            Pos = new Vector2(Position[0, 0], Position[0, 1]);
+        }
     }
 }
