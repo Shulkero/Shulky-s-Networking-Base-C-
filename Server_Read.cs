@@ -2,9 +2,10 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Net;
-using UnityEngine;
 using Networking;
 using shared_handler;
+using Random = System.Random;
+using vector_library;
 
 namespace ServerLib
 {
@@ -32,6 +33,13 @@ namespace ServerLib
 
 
 
+
+        GAME HEADERS:
+
+        |2| --> Movement Destination
+
+
+
         =========================*/
 
         int cl_Port;
@@ -40,8 +48,8 @@ namespace ServerLib
         string sv_Tag = "sv";
         IPAddress cl_IP;
         UDP_Networking _server;
-        UDP_Server main;
-        Handler _handler;
+        BackgroundRun main;
+        ServerHandler _handler;
 
         //LIST OF CLIENTS CONNECTED TO SERVER
         List<Server_Client> sv_Clients;
@@ -64,9 +72,10 @@ namespace ServerLib
 
         //MESSAGE INFO
         string content;
+        string[] message;
         bool send_Confirm = false;
 
-        public void Setup(string msg, UDP_Networking server, Handler handler, UDP_Server master, List<Server_Client> ClientList)
+        public void Setup(string msg, UDP_Networking server, ServerHandler handler, BackgroundRun master, List<Server_Client> ClientList)
         {
             main = master;
             content = msg;
@@ -86,7 +95,7 @@ namespace ServerLib
                 string[] Parts = content.Split(separator_parts);
 
                 // Parse --> IP:PORT
-                string[] Address = Parts[0].Split(":");
+                string[] Address = Parts[0].Split(':');
                 cl_IP = IPAddress.Parse(Address[0]);
                 cl_Port = int.Parse(Address[1]);
 
@@ -124,7 +133,7 @@ namespace ServerLib
                 }
 
                 // Parse --> Message
-                string[] Message = Parts[2].Split(separator_message);
+                message = Parts[2].Split(separator_message);
 
                 // Check header
                 switch (header)
@@ -135,11 +144,14 @@ namespace ServerLib
                     case 1: //Confirmation received
                         ConfirmationReceived();
                         break;
+                    case 2: //Receives movement inputs.
+                        //Movement();
+                        break;
                 }
             }
             catch (Exception e)
             {
-                Debug.Log("Couldn't parse message:" + e);
+                Console.Write("Couldn't parse message:" + content + " ERROR: " + e);
             }
         }
 
@@ -173,7 +185,7 @@ namespace ServerLib
             }
 
             _server.Send(ToSend, cl_IP, cl_Port);
-            Debug.Log(ToSend);
+            //Debug.Log(ToSend);
         }
 
         public void SendTo(string header, Server_Client target, bool ACK = false, params string[] parts)
@@ -216,7 +228,7 @@ namespace ServerLib
             string ToSend = Identifier + separator_parts + Message;
 
             _server.Send(ToSend, cl_IP, cl_Port);
-            Debug.Log(ToSend);
+            //Debug.Log(ToSend);
         }
         
 
@@ -241,25 +253,23 @@ namespace ServerLib
                     newClient.Setup_Client(cl_Port, cl_IP, cl_Tag);
                     client = newClient;
                     main.server_Clients.Add(client);
+                    Console.WriteLine("Login of user: " + cl_Tag + " " + "connecting from:" + " " + cl_IP + ":" + cl_Port);
+
+                    Reply("4", true, _handler.CompileClient(client, true)); //We send the new client the info saved in servers I guess.
                 }
             }
 
             //NOW THE CLIENT HAS BEEN REGISTERED OR IT WAS ALREADY REGISTERED BEFORE.
             //WE HAVE TO SEND THE INFORMATION ON THE GAME STATUS NOW.
 
-            foreach(Server_Client user in main.server_Clients)
+            foreach (Server_Client user in main.server_Clients)
             {
-                if(user != client)
+                if (user.Tag != client.Tag)
                 {
-                    Reply("0", true, _handler.CompileClient(user));
                     SendTo("0", user, true, _handler.CompileClient(client));
+                    Reply("0", true, _handler.CompileClient(user));
                 }
             }
-
-            //TIME TO SEND AN ACK I GUESS...
-
-
-
         }
 
         /*-------------------------
@@ -287,6 +297,14 @@ namespace ServerLib
                 ToRemove.Remove(ToRemove[0]);
             }
         }
+
+        /*-------------------------
+            HANDLING MOVEMENT
+        -------------------------*/
+        /*private void Movement()
+        {
+            float[,] Input = _handler.ExtractVector(message[0]);
+        }*/
     }
 
 
@@ -300,16 +318,26 @@ namespace ServerLib
         public string Tag;
         public int TimeID;
 
+        //Machine Speed
+        private float PlayerSpeed;
+
+        //Game Variables
+        public bool Moving;
+        public float[,] Pos;
+
+
+
         public List<ConfirmationRequest> AwaitingResponses; //MESSAGES WAITING FOR CONFIRMATION
 
         public List<int> LastIDs; 
 
         public void Setup_Client(int port, IPAddress ip, string tag)
         {
+            Moving = false;
+            Pos = new float[1,2] { { 0, 0 } };
             Port = port;
             IP = ip;
             Tag = tag;
-
             AwaitingResponses = new List<ConfirmationRequest>();
             LastIDs = new List<int>();
             for(int i = 0; i < 5; i++)
@@ -318,6 +346,10 @@ namespace ServerLib
             }
         }
 
+        public float GetPlayerSpeed()
+        {
+            return PlayerSpeed;
+        }
 
         //FUNCTION TO COMPARE IF RECEIVED MESSAGE IS NEWER THAN LAST ONE.
         public bool Check_ID(int header, int ID)
@@ -338,4 +370,5 @@ namespace ServerLib
             AwaitingResponses.Add(newRequest);
         }
     }
+
 }

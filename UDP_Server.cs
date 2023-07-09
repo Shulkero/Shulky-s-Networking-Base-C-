@@ -1,68 +1,83 @@
 using System.Collections;
 using System.Collections.Generic;
-using UnityEngine;
 using Networking;
 using System.Net;
 using System;
 using ServerLib;
 using shared_handler;
+using System.Threading.Tasks;
+using vector_library;
 
-public class UDP_Server : MonoBehaviour
+public class UDP_Server
 {
-    /*=======================
-        SERVER VARIABLES
-    =======================*/
-    private UDP_Networking _server;
-    [SerializeField] private int server_Port;
-
-    //TIME IDS
-    public int TimeID;
-    private int TickDown = 50;
-
-    //CLIENT LIST
-    public List<Server_Client> server_Clients;
-
-    //HANDLER
-    private Handler _handler;
-
-
-
-    private void Awake()
-    {
-        //SET FRAMERATE TO 60fps SO THAT GAME DOESNT BURN MY PC.
-        QualitySettings.vSyncCount = 0;
-        Application.targetFrameRate = 60;
-
-        //INIT CLIENT LIST
-        server_Clients = new List<Server_Client>();
-
-        //START SERVER
-        _handler = new Handler();
-        _handler.SetupHandler(this);
-
-        server_create();
-    }
-
-    private void server_create()
-    {
-        _server = new UDP_Networking(); //Creates new connection
-        _server.Main(server_Port); //Starts listening in client_Port port
-    }
-
-    private void FixedUpdate()
-    {
-        read();
-        TickAwaiting();
-        //CInstances_SendPos();
-    }
 
 
     /*=============================
-    
-       GENERIC SERVER FUNCTIONS
+            MAIN LOOP
+    ==============================*/
 
-    =============================*/
-    private void read()
+    private static async Task Main(String[] args)
+    {
+        // Start a task to read messages in the background
+        Console.WriteLine("Starting server...");
+        BackgroundRun ToRun = new BackgroundRun(); //BackgroundRun()
+        UDP_Networking Network = new UDP_Networking(); //Setup the connection
+        ServerHandler Handler = new ServerHandler(); //Setup the handler
+        ToRun.setup(Handler, Network);
+
+        int Port = 27015; //SERVER PORT VARIABLE
+        Network.Main(Port);
+
+        //Task readerTask = Task.Run(() => ToRun.read());*/
+        await Task.Run(() => MainLoop(ToRun));
+    }
+
+    private static async Task MainLoop(BackgroundRun Background) //This MainLoop is constantly executed.
+    {
+        Console.WriteLine("Server started.");
+        while (true)
+        {
+            Background.read(); //Check if there are any messages in the queue
+            Background.TickAwaiting(); //For the Acknowledge check.
+            //Background.UpdateInfo(); //Send update packets periodically to the clients.
+
+            //await Task.Run(() => Background.SecondLoop(Background));
+            // Do other processing or wait for a specific time interval
+
+            await Task.Delay(1000); //Delay to execute MainLoop.
+        }
+    }
+}
+
+public class BackgroundRun
+{
+
+    private int X = 5; //Timer for some actions.
+
+    //SERVER & CONNECTION INFO
+    private UDP_Server _host;
+    private UDP_Networking _server;
+
+    //UTILITIES &  HANDLER
+    private ServerHandler _handler;
+
+    //CLIENTS CONNECTED INFO
+    public List<Server_Client> server_Clients;
+
+    //VARIABLES FOR THE MESSAGES
+    private char separator_parts = '#', separator_identifier = ';', separator_message = ';';
+    public int TimeID = 0; //TimeID
+
+
+
+    public void setup(ServerHandler handler, UDP_Networking server)
+    {
+        _handler = handler;
+        handler.SetupHandler(_host, this);
+        _server = server;
+        server_Clients = new List<Server_Client>();
+    }
+    public void read()
     {
         try
         {
@@ -78,61 +93,91 @@ public class UDP_Server : MonoBehaviour
         }
         catch (Exception e)
         {
-            Debug.Log("Server couldn't read message:" + e);
+            Console.Write("Server couldn't read message:" + e);
         }
     }
 
-    /*==============================
-      RESEND RESEND RESEND RESEND
-    ==============================*/
+    public void TickAwaiting()
+    {
+        if (server_Clients.Count != 0)
+        {
+            foreach (Server_Client cl in server_Clients)
+            {
+                List<ConfirmationRequest> ToRemove = new List<ConfirmationRequest>();
+                if (cl.AwaitingResponses.Count != 0)
+                {
+                    foreach (ConfirmationRequest Request in cl.AwaitingResponses)
+                    {
+                        Request.AmountsTicked++;
+
+                        if (Request.AmountsTicked > 10)
+                        {
+                            ToRemove.Add(Request);
+                        }
+                        else
+                        {
+                            ResendMessage(Request.Message, cl);
+                        }
+                    }
+                }
+
+                while (ToRemove.Count > 0)
+                {
+                    cl.AwaitingResponses.Remove(ToRemove[0]);
+                    ToRemove.Remove(ToRemove[0]);
+                }
+            }
+        }
+    }
+
+    public void SendTo(string header, Server_Client target, bool ACK = false, params string[] parts)
+    {
+        // MSG1|MSG2|MSG3|MSG4...  --> Message 
+        string Message = _handler.CompileList(separator_message, parts);
+
+        //If we want to receive an acknowledgement.
+        string Identifier = null;
+
+        TimeID++;
+        Identifier = _handler.CompileList(separator_identifier, "sv", TimeID.ToString(), header);
+
+        //Joins parts together.
+        string ToSend = Identifier + separator_parts + Message;
+
+        if (ACK)
+        {
+            string Confirmations = _handler.CompileList(separator_identifier, "1");
+            //Joins parts together.
+            ToSend = ToSend + separator_parts + Confirmations;
+            target.AwaitConfirmation(ToSend, TimeID);
+        }
+        _server.Send(ToSend, target.IP, target.Port);
+    }
 
     public void ResendMessage(string ToSend, Server_Client client)
     {
-        print(ToSend);
         _server.Send(ToSend, client.IP, client.Port);
     }
 
-
-    /*==============================
-     REFRESH AWAITING CONFIRMATIONS
-    ==============================*/
-
-    private void TickAwaiting()
+    /*public void UpdateInfo()
     {
-        TickDown--;
-        if (TickDown <= 0)
+        foreach (Server_Client client in server_Clients)
         {
-            TickDown = 50;
-
-            if(server_Clients.Count != 0)
+            foreach (Server_Client other_client in server_Clients)
             {
-                foreach (Server_Client cl in server_Clients)
+                if (other_client.Moving && other_client != client)
                 {
-                    List<ConfirmationRequest> ToRemove = new List<ConfirmationRequest>();
-                    if (cl.AwaitingResponses.Count != 0)
-                    {
-                        foreach (ConfirmationRequest Request in cl.AwaitingResponses)
-                        {
-                            Request.AmountsTicked++;
-
-                            if (Request.AmountsTicked > 10)
-                            {
-                                ToRemove.Add(Request);
-                            }
-                            else
-                            {
-                                ResendMessage(Request.Message, cl);
-                            }
-                        }
-                    }
-
-                    while (ToRemove.Count > 0)
-                    {
-                        cl.AwaitingResponses.Remove(ToRemove[0]);
-                        ToRemove.Remove(ToRemove[0]);
-                    }
+                    SendTo("3", client, false, _handler.CompileUpdatePack(other_client));
                 }
-            } 
+            }
+
+            if (client.Moving)
+            {
+                SendTo("3", client, false, _handler.CompileUpdatePack(client));
+            }
         }
-    }
+    }*/
 }
+
+
+
